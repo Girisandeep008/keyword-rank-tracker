@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keyword Rank Dashboard</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --wash: rgba(11,11,11,0.04);
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --none: #c3c2b7;
+  --up: #006300;
+  --down: #d03b3b;
+  --link: #1c5cab;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --wash: rgba(255,255,255,0.05);
+    --s1: #3987e5; --s2: #d95926; --none: #52514e; --up: #0ca30c; --down: #e66767; --link: #86b6ef;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --wash: rgba(255,255,255,0.05);
+  --s1: #3987e5; --s2: #d95926; --none: #52514e; --up: #0ca30c; --down: #e66767; --link: #86b6ef;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 20px; }
+h1 { font-size: 22px; margin: 0 0 4px; font-weight: 650; }
+h2 { font-size: 15px; margin: 0 0 2px; font-weight: 600; }
+.sub { color: var(--ink-2); margin: 0; }
+.note { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+select, input[type=search], button {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+}
+button { cursor: pointer; }
+button:hover, select:hover { background: var(--wash); }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.tile .label { color: var(--ink-2); font-size: 13px; }
+.tile .value { font-size: 30px; font-weight: 650; line-height: 1.2; margin-top: 4px; }
+.tile .delta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-bottom: 12px; }
+@media (max-width: 400px) { .grid2 { grid-template-columns: 1fr; } }
+.up { color: var(--up); }
+.down { color: var(--down); }
+.mut { color: var(--muted); }
+
+/* horizontal bars */
+.bars { display: grid; gap: 2px; }
+.bar-row {
+  display: grid; grid-template-columns: minmax(90px, 140px) 1fr 64px; gap: 10px; align-items: center;
+  padding: 5px 6px; border-radius: 6px; cursor: pointer; border: 0; background: none; text-align: left; width: 100%;
+}
+.bar-row:hover, .bar-row.active { background: var(--wash); }
+.bar-row.active .bar-label { font-weight: 600; }
+.bar-label { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { height: 14px; position: relative; }
+.bar-fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--s1); min-width: 2px; }
+.bar-fill.none { background: var(--none); }
+.bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+
+/* line chart */
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.legend { display: flex; gap: 16px; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+.legend i { display: inline-block; width: 12px; height: 2px; vertical-align: middle; margin-right: 6px; border-radius: 1px; }
+
+/* tables */
+.table-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 12px; }
+.table-tools input[type=search] { flex: 1 1 200px; min-width: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border-radius: 999px; padding: 4px 10px; font-size: 13px; }
+.chip.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+th { color: var(--ink-2); font-weight: 600; white-space: nowrap; user-select: none; }
+th.sortable { cursor: pointer; }
+th.sortable:hover { color: var(--ink); }
+th .arrow { color: var(--muted); font-size: 11px; }
+tbody tr:hover { background: var(--wash); }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+th.num { text-align: right; }
+.pos { font-weight: 650; font-size: 15px; }
+.url a { color: var(--link); text-decoration: none; word-break: break-all; }
+.url a:hover { text-decoration: underline; }
+.tag { font-size: 11px; color: var(--ink-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.flag { font-size: 11px; color: var(--ink-2); display: block; margin-top: 2px; }
+.spark { display: block; }
+.count { color: var(--muted); font-size: 12px; }
+.empty { color: var(--muted); padding: 24px; text-align: center; }
+
+#tip {
+  position: fixed; pointer-events: none; z-index: 10; display: none;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.15); max-width: 320px;
+}
+#tip b { font-weight: 600; }
+#tip .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+#tip i { display: inline-block; width: 10px; height: 2px; margin-right: 6px; vertical-align: middle; }
+footer { margin-top: 20px; color: var(--muted); font-size: 12px; }
+footer a { color: var(--link); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">Google keyword rankings</h1>
+      <p class="sub" id="subtitle">Loading…</p>
+    </div>
+    <div class="controls">
+      <label for="weekSel" class="mut">Week</label>
+      <select id="weekSel"></select>
+      <button id="themeBtn" title="Switch light / dark">Theme</button>
+    </div>
+  </header>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="grid2">
+    <div class="card">
+      <h2>Position distribution</h2>
+      <p class="note">Keywords by Google position. Click a row to filter the table.</p>
+      <div class="bars" id="bucketBars"></div>
+    </div>
+    <div class="card">
+      <h2>Average position by topic</h2>
+      <p class="note">Lower is better. Only counts keywords in the top 30. Click to filter.</p>
+      <div class="bars" id="topicBars"></div>
+    </div>
+  </section>
+
+  <section class="card" style="margin-bottom:12px">
+    <h2>Weekly trend</h2>
+    <p class="note" id="trendNote">Number of keywords in the top 3 and top 10, per weekly run.</p>
+    <div class="legend"><span><i style="background:var(--s1)"></i>Top 3</span><span><i style="background:var(--s2)"></i>Top 10</span></div>
+    <div class="chart" id="trend"></div>
+  </section>
+
+  <section class="card" style="margin-bottom:12px">
+    <h2>Keywords</h2>
+    <div class="table-tools">
+      <input type="search" id="search" placeholder="Search keyword or URL…" aria-label="Search keywords">
+      <select id="statusSel" aria-label="Position filter">
+        <option value="">All positions</option>
+        <option value="b1">#1</option>
+        <option value="b2">2–3</option>
+        <option value="b3">4–10</option>
+        <option value="b4">11–20</option>
+        <option value="b5">21–30</option>
+        <option value="none">Not in top 30</option>
+        <option value="up">Moved up</option>
+        <option value="down">Moved down</option>
+        <option value="urlchg">Ranking URL changed</option>
+      </select>
+      <button id="csvBtn">Download CSV</button>
+    </div>
+    <div class="chips" id="topicChips"></div>
+    <p class="count" id="rowCount"></p>
+    <div class="scroll">
+      <table id="kwTable">
+        <thead><tr>
+          <th class="sortable" data-k="keyword">Keyword <span class="arrow"></span></th>
+          <th class="sortable" data-k="topic">Topic <span class="arrow"></span></th>
+          <th class="sortable num" data-k="pos">Position <span class="arrow"></span></th>
+          <th class="sortable num" data-k="chg">Change <span class="arrow"></span></th>
+          <th class="sortable num" data-k="best">Best <span class="arrow"></span></th>
+          <th>History</th>
+          <th class="sortable" data-k="url">Ranking URL <span class="arrow"></span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Pages that rank</h2>
+    <p class="note">Each URL that ranks, and for how many keywords this week.</p>
+    <div class="scroll">
+      <table id="pageTable">
+        <thead><tr><th>URL</th><th class="num">Keywords</th><th class="num">Avg position</th><th class="num">Best</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Data: <a href="data/history.csv">history.csv</a> · Updated every Monday by GitHub Actions · Live Google results via Serper.dev</footer>
+</div>
+<div id="tip"></div>
+
+<script>
+const MAX = 30;
+const TOPICS = [
+  ["Minor", k => /\bminors?\b/.test(k)],
+  ["NRI", k => /\bnri\b|\bnro\b|\bnre\b/.test(k)],
+  ["Commodity", k => /commodit/.test(k)],
+  ["MTF", k => /\bmtf\b|margin trading/.test(k)],
+  ["IPO", k => /\bipos?\b/.test(k)],
+  ["Demat & account", k => /demat|account/.test(k)],
+  ["Platform & brokerage", k => true],
+];
+const BUCKETS = [
+  ["b1", "#1", p => p === 1],
+  ["b2", "2–3", p => p >= 2 && p <= 3],
+  ["b3", "4–10", p => p >= 4 && p <= 10],
+  ["b4", "11–20", p => p >= 11 && p <= 20],
+  ["b5", "21–30", p => p >= 21 && p <= 30],
+  ["none", "Not in top 30", p => p == null],
+];
+const topicOf = kw => TOPICS.find(([, t]) => t(kw.toLowerCase()))[0];
+const bucketOf = p => BUCKETS.find(([, , t]) => t(p))[0];
+
+const state = { dates: [], byDate: {}, sel: null, topic: "", status: "", q: "", sort: { k: "pos", dir: 1 }, cfg: {} };
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDate = d => new Date(d + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const shortUrl = u => u.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+
+function parseCSV(text) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n") { row.push(f); rows.push(row); row = []; f = ""; }
+    else if (c !== "\r") f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  const head = rows.shift() || [];
+  return rows.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ""])));
+}
+
+async function load() {
+  try { state.cfg = await (await fetch("config.json?v=" + Date.now())).json(); } catch (e) {}
+  let text;
+  try {
+    const r = await fetch("data/history.csv?v=" + Date.now());
+    if (!r.ok) throw new Error(r.status);
+    text = await r.text();
+  } catch (e) {
+    $("#subtitle").textContent = "No data yet. Run the “Weekly keyword rankings” workflow once.";
+    return;
+  }
+  for (const r of parseCSV(text)) {
+    const p = r.position ? +r.position : null;
+    (state.byDate[r.date] ||= new Map()).set(r.keyword.toLowerCase(),
+      { keyword: r.keyword, pos: p, url: r.url, title: r.title, topic: topicOf(r.keyword) });
+  }
+  state.dates = Object.keys(state.byDate).sort();
+  state.sel = state.dates.at(-1);
+  $("#weekSel").innerHTML = state.dates.slice().reverse().map(d => `<option value="${d}">${fmtDate(d)}</option>`).join("");
+  const domain = state.cfg.domain || "your domain";
+  $("#title").textContent = `${domain} · Google rankings`;
+  render();
+}
+
+function prevDate(d) { const i = state.dates.indexOf(d); return i > 0 ? state.dates[i - 1] : null; }
+
+function rowsFor(d) {
+  const cur = state.byDate[d], pd = prevDate(d), prev = pd ? state.byDate[pd] : null;
+  const upto = state.dates.slice(0, state.dates.indexOf(d) + 1);
+  return [...cur.entries()].map(([k, r]) => {
+    const p = prev?.get(k);
+    let chg = null, chgKind = "first";
+    if (p) {
+      if (p.pos != null && r.pos != null) { chg = p.pos - r.pos; chgKind = chg > 0 ? "up" : chg < 0 ? "down" : "same"; }
+      else if (p.pos == null && r.pos != null) { chg = MAX + 1 - r.pos; chgKind = "entered"; }
+      else if (p.pos != null && r.pos == null) { chg = -(MAX + 1 - p.pos); chgKind = "dropped"; }
+      else chgKind = "same";
+    }
+    const hist = upto.slice(-12).map(dd => state.byDate[dd].get(k)?.pos ?? null);
+    const allPos = upto.map(dd => state.byDate[dd].get(k)?.pos).filter(x => x != null);
+    return { ...r, prevPos: p?.pos ?? null, prevUrl: p?.url || "", chg, chgKind,
+      urlChanged: !!(p && p.url && r.url && p.url !== r.url), hist, best: allPos.length ? Math.min(...allPos) : null };
+  });
+}
+
+function stats(d) {
+  const ps = [...state.byDate[d].values()].map(r => r.pos);
+  const ranked = ps.filter(p => p != null);
+  return { n: ps.length, top1: ranked.filter(p => p === 1).length, top3: ranked.filter(p => p <= 3).length,
+    top10: ranked.filter(p => p <= 10).length, none: ps.length - ranked.length,
+    avg: ranked.length ? ranked.reduce((a, b) => a + b, 0) / ranked.length : null };
+}
+
+function render() {
+  const d = state.sel, pd = prevDate(d);
+  const sub = [`Google ${(state.cfg.country || "").toUpperCase() || ""}`.trim(), `top ${state.cfg.max_results || MAX} checked`, `week of ${fmtDate(d)}`,
+    pd ? `compared with ${fmtDate(pd)}` : "first run, no comparison yet"];
+  $("#subtitle").textContent = sub.join(" · ");
+  renderTiles(d, pd);
+  const rows = rowsFor(d);
+  renderBuckets(rows);
+  renderTopics(rows);
+  renderTrend();
+  renderChips(rows);
+  renderTable(rows);
+  renderPages(rows);
+}
+
+function renderTiles(d, pd) {
+  const s = stats(d), p = pd ? stats(pd) : null;
+  const delta = (k, lowerBetter) => {
+    if (!p || s[k] == null || p[k] == null) return `<div class="delta">${p ? "—" : "first week"}</div>`;
+    const diff = s[k] - p[k];
+    if (Math.abs(diff) < 0.05) return `<div class="delta">No change vs last week</div>`;
+    const good = lowerBetter ? diff < 0 : diff > 0;
+    const v = k === "avg" ? Math.abs(diff).toFixed(1) : Math.abs(diff);
+    return `<div class="delta ${good ? "up" : "down"}">${diff > 0 ? "▲" : "▼"} ${v} vs last week</div>`;
+  };
+  const tile = (label, val, dl) => `<div class="card tile"><div class="label">${label}</div><div class="value">${val}</div>${dl}</div>`;
+  $("#tiles").innerHTML =
+    tile("Keywords tracked", s.n, `<div class="delta">${s.n - s.none} rank in the top ${MAX}</div>`) +
+    tile("Ranked #1", s.top1, delta("top1")) +
+    tile("In top 3", s.top3, delta("top3")) +
+    tile("In top 10", s.top10, delta("top10")) +
+    tile(`Not in top ${MAX}`, s.none, delta("none", true)) +
+    tile("Avg position", s.avg == null ? "—" : s.avg.toFixed(1), delta("avg", true));
+}
+
+function barRows(el, items, activeKey, onClick) {
+  const max = Math.max(1, ...items.map(i => i.len));
+  el.innerHTML = items.map(i => `
+    <button class="bar-row ${activeKey === i.key ? "active" : ""}" data-key="${esc(i.key)}" data-tip="${esc(i.tip)}">
+      <span class="bar-label">${esc(i.label)}</span>
+      <span class="bar-track"><span class="bar-fill ${i.cls || ""}" style="display:block;width:${(i.len / max) * 100}%"></span></span>
+      <span class="bar-val">${i.val}</span>
+    </button>`).join("");
+  el.querySelectorAll(".bar-row").forEach(b => {
+    b.onclick = () => onClick(b.dataset.key);
+    b.onmousemove = e => showTip(e, b.dataset.tip);
+    b.onmouseleave = hideTip;
+  });
+}
+
+function renderBuckets(rows) {
+  const items = BUCKETS.map(([key, label]) => {
+    const ks = rows.filter(r => bucketOf(r.pos) === key);
+    return { key, label, len: ks.length, val: ks.length, cls: key === "none" ? "none" : "",
+      tip: `<b>${label}</b>: ${ks.length} keyword${ks.length === 1 ? "" : "s"}` +
+        (ks.length ? "<br>" + ks.slice(0, 12).map(r => esc(r.keyword)).join("<br>") + (ks.length > 12 ? `<br>+${ks.length - 12} more` : "") : "") };
+  });
+  barRows($("#bucketBars"), items, state.status, k => { state.status = state.status === k ? "" : k; $("#statusSel").value = state.status; render(); });
+}
+
+function renderTopics(rows) {
+  const names = TOPICS.map(t => t[0]).filter(n => rows.some(r => r.topic === n));
+  const items = names.map(n => {
+    const rs = rows.filter(r => r.topic === n), ranked = rs.filter(r => r.pos != null);
+    const avg = ranked.length ? ranked.reduce((a, r) => a + r.pos, 0) / ranked.length : null;
+    return { key: n, label: n, len: avg == null ? 0 : avg, val: avg == null ? "—" : avg.toFixed(1),
+      tip: `<b>${esc(n)}</b><br>Avg position: ${avg == null ? "—" : avg.toFixed(1)}<br>${ranked.length} of ${rs.length} keywords in top ${MAX}` };
+  });
+  barRows($("#topicBars"), items, state.topic, k => { state.topic = state.topic === k ? "" : k; render(); });
+}
+
+function renderTrend() {
+  const el = $("#trend"), dates = state.dates;
+  const series = [
+    { name: "Top 3", color: "var(--s1)", vals: dates.map(d => stats(d).top3) },
+    { name: "Top 10", color: "var(--s2)", vals: dates.map(d => stats(d).top10) },
+  ];
+  $("#trendNote").textContent = dates.length < 2
+    ? "Number of keywords in the top 3 and top 10, per weekly run. The trend line appears after the second weekly run."
+    : "Number of keywords in the top 3 and top 10, per weekly run.";
+  const W = Math.max(280, el.clientWidth), H = 220, m = { t: 12, r: 56, b: 28, l: 34 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const n = Math.max(...dates.map(d => stats(d).n), 1);
+  const yMax = Math.ceil(n / 10) * 10;
+  const x = i => m.l + (dates.length === 1 ? iw / 2 : (i / (dates.length - 1)) * iw);
+  const y = v => m.t + ih - (v / yMax) * ih;
+  const ticks = [0, yMax / 2, yMax].map(Math.round);
+  const step = Math.ceil(dates.length / Math.max(1, Math.floor(iw / 80)));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Keywords in top 3 and top 10 over time">`;
+  ticks.forEach(t => svg += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>` +
+    `<text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)" style="font-variant-numeric:tabular-nums">${t}</text>`);
+  dates.forEach((d, i) => { if (i % step === 0 || i === dates.length - 1) svg += `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--muted)">${fmtDate(d).replace(/ \d{4}$/, "")}</text>`; });
+  svg += `<line id="xhair" y1="${m.t}" y2="${m.t + ih}" stroke="var(--axis)" style="display:none"/>`;
+  series.forEach(s => {
+    if (dates.length > 1) svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${s.vals.map((v, i) => `${x(i)},${y(v)}`).join(" ")}"/>`;
+    s.vals.forEach((v, i) => svg += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`);
+  });
+  // direct labels at the line ends, nudged apart if they collide
+  const ends = series.map(s => ({ s, yy: y(s.vals.at(-1)) }));
+  if (Math.abs(ends[0].yy - ends[1].yy) < 14) { const mid = (ends[0].yy + ends[1].yy) / 2; ends[0].yy = mid + 7; ends[1].yy = mid - 7; }
+  ends.forEach(({ s, yy }) => svg += `<text x="${x(dates.length - 1) + 8}" y="${yy + 4}" font-size="11" fill="var(--ink-2)">${s.name} ${s.vals.at(-1)}</text>`);
+  svg += `<rect x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent" id="hit"/></svg>`;
+  el.innerHTML = svg;
+  const hit = el.querySelector("#hit"), xh = el.querySelector("#xhair"), svgEl = el.querySelector("svg");
+  hit.onmousemove = e => {
+    const r = svgEl.getBoundingClientRect(), px = (e.clientX - r.left) * (W / r.width);
+    let i = 0, best = Infinity; dates.forEach((_, j) => { const dd = Math.abs(x(j) - px); if (dd < best) { best = dd; i = j; } });
+    xh.setAttribute("x1", x(i)); xh.setAttribute("x2", x(i)); xh.style.display = "";
+    showTip(e, `<b>${fmtDate(dates[i])}</b>` + series.map(s => `<div class="row"><span><i style="background:${s.color}"></i>${s.name}</span><b>${s.vals[i]}</b></div>`).join(""));
+  };
+  hit.onmouseleave = () => { xh.style.display = "none"; hideTip(); };
+}
+
+function renderChips(rows) {
+  const names = ["", ...TOPICS.map(t => t[0]).filter(n => rows.some(r => r.topic === n))];
+  $("#topicChips").innerHTML = names.map(n => `<button class="chip ${state.topic === n ? "active" : ""}" data-t="${esc(n)}">${n || "All topics"}</button>`).join("");
+  $("#topicChips").querySelectorAll(".chip").forEach(b => b.onclick = () => { state.topic = b.dataset.t; render(); });
+}
+
+function changeCell(r) {
+  switch (r.chgKind) {
+    case "first": return `<span class="mut">—</span>`;
+    case "same": return `<span class="mut">0</span>`;
+    case "up": return `<span class="up">▲ ${r.chg}</span>`;
+    case "down": return `<span class="down">▼ ${-r.chg}</span>`;
+    case "entered": return `<span class="up">▲ New</span>`;
+    case "dropped": return `<span class="down">▼ Lost</span>`;
+  }
+}
+
+function spark(hist) {
+  const W = 84, H = 24, n = hist.length;
+  const x = i => n === 1 ? W / 2 : 3 + (i / (n - 1)) * (W - 6);
+  const y = p => 3 + ((Math.min(p, MAX) - 1) / (MAX - 1)) * (H - 6);
+  let segs = [], cur = [];
+  hist.forEach((p, i) => { if (p == null) { if (cur.length) segs.push(cur); cur = []; } else cur.push(`${x(i)},${y(p)}`); });
+  if (cur.length) segs.push(cur);
+  const last = hist.at(-1);
+  const tip = hist.map(p => p ?? "–").join(" → ");
+  return `<svg class="spark" width="${W}" height="${H}" aria-label="Position history: ${tip}"><title>Last ${n} weeks: ${tip}</title>
+    <line x1="0" x2="${W}" y1="${H - 1}" y2="${H - 1}" stroke="var(--grid)"/>
+    ${segs.map(s => s.length > 1 ? `<polyline fill="none" stroke="var(--s1)" stroke-width="1.5" points="${s.join(" ")}"/>` : "").join("")}
+    ${last != null ? `<circle cx="${x(n - 1)}" cy="${y(last)}" r="3" fill="var(--s1)"/>` : ""}</svg>`;
+}
+
+function filtered(rows) {
+  const q = state.q.toLowerCase();
+  return rows.filter(r =>
+    (!state.topic || r.topic === state.topic) &&
+    (!q || r.keyword.toLowerCase().includes(q) || r.url.toLowerCase().includes(q)) &&
+    (!state.status ||
+      (state.status === "up" ? ["up", "entered"].includes(r.chgKind) :
+       state.status === "down" ? ["down", "dropped"].includes(r.chgKind) :
+       state.status === "urlchg" ? r.urlChanged : bucketOf(r.pos) === state.status)));
+}
+
+function renderTable(rows) {
+  const { k, dir } = state.sort;
+  const val = r => k === "pos" ? (r.pos ?? 999) : k === "best" ? (r.best ?? 999) : k === "chg" ? (r.chg ?? 0) : (r[k] || "").toLowerCase();
+  const list = filtered(rows).sort((a, b) => (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : a.keyword.localeCompare(b.keyword)) * dir);
+  $("#rowCount").textContent = `${list.length} of ${rows.length} keywords`;
+  document.querySelectorAll("#kwTable th.sortable").forEach(th => th.querySelector(".arrow").textContent = th.dataset.k === k ? (dir > 0 ? "▲" : "▼") : "");
+  $("#kwTable tbody").innerHTML = list.length ? list.map(r => `<tr>
+      <td>${esc(r.keyword)}</td>
+      <td><span class="tag">${esc(r.topic)}</span></td>
+      <td class="num">${r.pos != null ? `<span class="pos">${r.pos}</span>` : `<span class="mut" style="white-space:nowrap">Not in top ${MAX}</span>`}</td>
+      <td class="num">${changeCell(r)}</td>
+      <td class="num">${r.best ?? "<span class='mut'>—</span>"}</td>
+      <td>${spark(r.hist)}</td>
+      <td class="url">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.title)}">${esc(shortUrl(r.url))}</a>` : "<span class='mut'>—</span>"}
+        ${r.urlChanged ? `<span class="flag">⇄ changed from ${esc(shortUrl(r.prevUrl))}</span>` : ""}</td>
+    </tr>`).join("") : `<tr><td colspan="7" class="empty">No keywords match these filters.</td></tr>`;
+}
+
+function renderPages(rows) {
+  const by = new Map();
+  rows.filter(r => r.url).forEach(r => { const a = by.get(r.url) || []; a.push(r); by.set(r.url, a); });
+  const list = [...by.entries()].map(([url, rs]) => ({ url, rs, avg: rs.reduce((a, r) => a + r.pos, 0) / rs.length, best: Math.min(...rs.map(r => r.pos)) }))
+    .sort((a, b) => b.rs.length - a.rs.length || a.avg - b.avg);
+  $("#pageTable tbody").innerHTML = list.map(p => `<tr data-tip="${esc("<b>Keywords</b><br>" + p.rs.sort((a, b) => a.pos - b.pos).map(r => `${r.pos} · ${esc(r.keyword)}`).join("<br>"))}">
+    <td class="url"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(shortUrl(p.url))}</a></td>
+    <td class="num">${p.rs.length}</td><td class="num">${p.avg.toFixed(1)}</td><td class="num">${p.best}</td></tr>`).join("");
+  $("#pageTable tbody").querySelectorAll("tr").forEach(tr => { tr.onmousemove = e => showTip(e, tr.dataset.tip); tr.onmouseleave = hideTip; });
+}
+
+function showTip(e, html) {
+  const t = $("#tip"); t.innerHTML = html; t.style.display = "block";
+  const w = t.offsetWidth, h = t.offsetHeight;
+  let lx = e.clientX + 14, ly = e.clientY + 14;
+  if (lx + w > innerWidth - 8) lx = e.clientX - w - 14;
+  if (ly + h > innerHeight - 8) ly = e.clientY - h - 14;
+  t.style.left = Math.max(8, lx) + "px"; t.style.top = Math.max(8, ly) + "px";
+}
+function hideTip() { $("#tip").style.display = "none"; }
+
+function downloadCSV() {
+  const rows = filtered(rowsFor(state.sel));
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [["date", "keyword", "topic", "position", "previous_position", "change", "url"].join(",")]
+    .concat(rows.map(r => [state.sel, r.keyword, r.topic, r.pos ?? "", r.prevPos ?? "", r.chgKind === "first" ? "" : (r.chg ?? 0), r.url].map(q).join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+  a.download = `rankings-${state.sel}.csv`; a.click();
+}
+
+$("#weekSel").onchange = e => { state.sel = e.target.value; render(); };
+$("#search").oninput = e => { state.q = e.target.value; renderTable(rowsFor(state.sel)); };
+$("#statusSel").onchange = e => { state.status = e.target.value; render(); };
+$("#csvBtn").onclick = downloadCSV;
+document.querySelectorAll("#kwTable th.sortable").forEach(th => th.onclick = () => {
+  state.sort = { k: th.dataset.k, dir: state.sort.k === th.dataset.k ? -state.sort.dir : (th.dataset.k === "chg" ? -1 : 1) };
+  renderTable(rowsFor(state.sel));
+});
+$("#themeBtn").onclick = () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark"
+    : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch (e) {}
+};
+try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => state.sel && renderTrend(), 150); });
+load();
+</script>
+</body>
+</html>

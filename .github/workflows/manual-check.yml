@@ -1,0 +1,42 @@
+name: Check keywords now
+
+on:
+  workflow_dispatch:
+    inputs:
+      keywords:
+        description: "Keywords to check, separated by commas (up to 20)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-commit
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check rankings
+        env:
+          SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
+          MANUAL_KEYWORDS: ${{ inputs.keywords }}
+        run: python rank_tracker.py
+
+      - name: Commit results
+        run: |
+          git config user.name "rank-tracker-bot"
+          git config user.email "rank-tracker-bot@users.noreply.github.com"
+          git add data/manual.csv
+          git diff --cached --quiet && exit 0
+          git commit -m "Manual check $(date -u +%FT%TZ)"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push && exit 0; sleep 5; done
+          exit 1

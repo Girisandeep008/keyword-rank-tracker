@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   workflow_run:
-    workflows: ["Weekly keyword rankings"]
+    workflows: ["Weekly keyword rankings", "Check keywords now"]
     types: [completed]
   workflow_dispatch:
 

@@ -113,6 +113,21 @@ th.num { text-align: right; }
 .count { color: var(--muted); font-size: 12px; }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
 
+.manual-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.manual-form input { flex: 1 1 260px; min-width: 0; }
+button.primary { background: var(--s1); color: #fff; border-color: transparent; font-weight: 600; }
+button.primary:hover { background: var(--s1); filter: brightness(1.08); }
+button:disabled { opacity: .6; cursor: progress; }
+.status { font-size: 13px; color: var(--ink-2); margin: 8px 0 0; min-height: 1.4em; }
+.status.err { color: var(--down); }
+.status a, details a { color: var(--link); }
+details { margin: 10px 0 4px; font-size: 13px; color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--ink-2); }
+details .token-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+details .token-row input { flex: 1 1 240px; min-width: 0; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+details ol { margin: 6px 0; padding-left: 20px; }
+tr.fresh { background: var(--wash); }
+#manualWrap { margin-top: 12px; }
 #tip {
   position: fixed; pointer-events: none; z-index: 10; display: none;
   background: var(--surface); color: var(--ink); border: 1px solid var(--border);
@@ -138,6 +153,38 @@ footer a { color: var(--link); }
       <button id="themeBtn" title="Switch light / dark">Theme</button>
     </div>
   </header>
+
+  <section class="card" style="margin-bottom:12px">
+    <h2>Check any keyword</h2>
+    <p class="note">Check live Google results for any keyword, including ones not in the weekly list. Up to 20 at a time, separated by commas. Results are saved in the table below.</p>
+    <form class="manual-form" id="manualForm">
+      <input type="search" id="manualInput" placeholder="e.g. zerodha kite, best trading app in india" aria-label="Keywords to check" autocomplete="off">
+      <button type="submit" class="primary" id="manualBtn">Check now</button>
+    </form>
+    <p class="status" id="manualStatus" role="status"></p>
+    <details id="tokenBox">
+      <summary id="tokenSummary">Run checks directly from this page (one-time setup)</summary>
+      <p>Without this, “Check now” opens GitHub and you click <b>Run workflow</b> there. With a GitHub token saved in this browser, the check runs from here and the result appears in about a minute.</p>
+      <ol>
+        <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → new fine-grained token</a>.</li>
+        <li>Repository access: <b>Only select repositories</b> → <span class="repoName">this repo</span>.</li>
+        <li>Permissions: <b>Actions: Read and write</b> and <b>Contents: Read-only</b>. Nothing else.</li>
+        <li>Generate, then paste it below.</li>
+      </ol>
+      <div class="token-row">
+        <input type="password" id="tokenInput" placeholder="github_pat_…" aria-label="GitHub token" autocomplete="off">
+        <button type="button" id="tokenSave">Save</button>
+        <button type="button" id="tokenClear">Remove</button>
+      </div>
+      <p class="mut">The token stays only in this browser (local storage). It is never sent anywhere except api.github.com.</p>
+    </details>
+    <div id="manualWrap" class="scroll">
+      <table id="manualTable">
+        <thead><tr><th>Checked</th><th>Keyword</th><th class="num">Position</th><th>Weekly list</th><th>Ranking URL</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
 
   <section class="tiles" id="tiles"></section>
 
@@ -208,7 +255,7 @@ footer a { color: var(--link); }
     </div>
   </section>
 
-  <footer>Data: <a href="data/history.csv">history.csv</a> · Updated every Monday by GitHub Actions · Live Google results via Serper.dev</footer>
+  <footer>Data: <a href="data/history.csv">history.csv</a> · <a href="data/manual.csv">manual.csv</a> · Updated every Monday by GitHub Actions · Live Google results via Serper.dev</footer>
 </div>
 <div id="tip"></div>
 
@@ -530,7 +577,115 @@ $("#themeBtn").onclick = () => {
 };
 try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
 let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => state.sel && renderTrend(), 150); });
-load();
+// ---- Manual checks -------------------------------------------------------
+const MANUAL_LIMIT = 20, WORKFLOW = "manual-check.yml", TOKEN_KEY = "gh_token";
+state.manual = []; state.fresh = "";
+const repoSlug = () => state.cfg.repo ||
+  (location.hostname.endsWith(".github.io") ? `${location.hostname.split(".")[0]}/${location.pathname.split("/")[1]}` : "");
+const getToken = () => { try { return localStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; } };
+const setToken = t => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch (e) {} };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmtTime = iso => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
+
+function parseKeywords(text) {
+  const seen = new Set(), out = [];
+  for (let k of text.split(/[,\n]/)) {
+    k = k.trim().replace(/\s+/g, " ");
+    if (k && !seen.has(k.toLowerCase())) { seen.add(k.toLowerCase()); out.push(k); }
+  }
+  return out.slice(0, MANUAL_LIMIT);
+}
+
+function setStatus(html, err) { const el = $("#manualStatus"); el.innerHTML = html; el.classList.toggle("err", !!err); }
+
+function refreshTokenUI() {
+  const has = !!getToken();
+  $("#tokenSummary").textContent = has ? "GitHub token saved: checks run from this page" : "Run checks directly from this page (one-time setup)";
+  $("#tokenInput").value = ""; $("#tokenInput").placeholder = has ? "Saved. Paste a new one to replace it." : "github_pat_…";
+  document.querySelectorAll(".repoName").forEach(e => e.textContent = repoSlug() || "this repo");
+}
+
+async function loadManual() {
+  try {
+    const r = await fetch("data/manual.csv?v=" + Date.now());
+    if (r.ok) state.manual = parseCSV(await r.text());
+  } catch (e) {}
+  renderManual();
+}
+
+function renderManual() {
+  const weekly = state.sel ? state.byDate[state.dates.at(-1)] : null;
+  const rows = state.manual.slice().sort((a, b) => b.checked_at.localeCompare(a.checked_at)).slice(0, 200);
+  $("#manualWrap").style.display = rows.length ? "" : "none";
+  $("#manualTable tbody").innerHTML = rows.map(r => {
+    const w = weekly?.get(r.keyword.toLowerCase());
+    const wk = w ? `<span class="tag">Tracked · ${w.pos != null ? "#" + w.pos : "not in top " + MAX}</span>` : `<span class="mut">—</span>`;
+    return `<tr class="${r.checked_at === state.fresh ? "fresh" : ""}">
+      <td style="white-space:nowrap">${esc(fmtTime(r.checked_at))}</td>
+      <td>${esc(r.keyword)}</td>
+      <td class="num">${r.position ? `<span class="pos">${esc(r.position)}</span>` : `<span class="mut" style="white-space:nowrap">Not in top ${MAX}</span>`}</td>
+      <td>${wk}</td>
+      <td class="url">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(r.title)}">${esc(shortUrl(r.url))}</a>` : "<span class='mut'>—</span>"}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function gh(path, opts = {}) {
+  const r = await fetch("https://api.github.com/repos/" + repoSlug() + path, {
+    ...opts, headers: { Authorization: "Bearer " + getToken(), Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers || {}) } });
+  if (!r.ok && r.status !== 204) {
+    const why = r.status === 401 ? "the saved token is invalid or expired" :
+      (r.status === 403 || r.status === 404) ? "the token can’t access this repo; check its repository and Actions permission" : `GitHub returned ${r.status}`;
+    throw new Error(why);
+  }
+  return r;
+}
+
+async function runViaApi(kws) {
+  const runsPath = `/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=10`;
+  const before = new Set((await (await gh(runsPath)).json()).workflow_runs.map(r => r.id));
+  await gh(`/actions/workflows/${WORKFLOW}/dispatches`, { method: "POST",
+    body: JSON.stringify({ ref: "main", inputs: { keywords: kws.join(", ") } }) });
+  setStatus(`Started. Checking ${kws.length} keyword${kws.length > 1 ? "s" : ""} on Google…`);
+  let run = null;
+  for (let i = 0; i < 72; i++) {           // up to ~6 minutes
+    await sleep(5000);
+    if (!run) run = (await (await gh(runsPath)).json()).workflow_runs.find(r => !before.has(r.id));
+    else run = await (await gh(`/actions/runs/${run.id}`)).json();
+    if (!run) continue;
+    if (run.status === "completed") break;
+    setStatus(`${run.status === "queued" ? "Waiting for GitHub to start the check" : "Checking Google"}… (${(i + 1) * 5}s) · <a href="${run.html_url}" target="_blank" rel="noopener">view run</a>`);
+  }
+  if (!run || run.status !== "completed") throw new Error("the check is taking longer than usual. Refresh this page in a few minutes");
+  if (run.conclusion !== "success") throw new Error(`the check failed. <a href="${run.html_url}" target="_blank" rel="noopener">See the run log</a>`);
+  const csv = await (await gh("/contents/data/manual.csv?ref=main", { headers: { Accept: "application/vnd.github.raw+json" } })).text();
+  state.manual = parseCSV(csv);
+  state.fresh = state.manual.map(r => r.checked_at).sort().at(-1) || "";
+  renderManual();
+  setStatus("Done. The new results are highlighted below.");
+}
+
+$("#manualForm").onsubmit = async e => {
+  e.preventDefault();
+  const kws = parseKeywords($("#manualInput").value);
+  if (!kws.length) { setStatus("Type at least one keyword.", true); return; }
+  const extra = $("#manualInput").value.split(/[,\n]/).filter(k => k.trim()).length > MANUAL_LIMIT ? ` Only the first ${MANUAL_LIMIT} are checked.` : "";
+  if (!getToken()) {
+    try { await navigator.clipboard.writeText(kws.join(", ")); } catch (err) {}
+    window.open(`https://github.com/${repoSlug()}/actions/workflows/${WORKFLOW}`, "_blank", "noopener");
+    setStatus(`Opened GitHub with your keywords copied. Click <b>Run workflow</b>, paste them into the box and run it. Results appear here about 2 minutes after it finishes (refresh the page).${extra}`);
+    return;
+  }
+  $("#manualBtn").disabled = true;
+  try { if (extra) setStatus(extra.trim()); await runViaApi(kws); }
+  catch (err) { setStatus("Couldn’t finish: " + err.message + ".", true); }
+  finally { $("#manualBtn").disabled = false; }
+};
+$("#tokenSave").onclick = () => { const t = $("#tokenInput").value.trim(); if (t) { setToken(t); refreshTokenUI(); setStatus("Token saved in this browser."); } };
+$("#tokenClear").onclick = () => { setToken(""); refreshTokenUI(); setStatus("Token removed from this browser."); };
+
+load().then(() => { refreshTokenUI(); loadManual(); });
 </script>
 </body>
 </html>

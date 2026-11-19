@@ -28,6 +28,11 @@ SERPER_URL = "https://google.serper.dev/search"
 PAGE_SIZE = 10
 FIELDS = ["date", "keyword", "position", "url", "title"]
 
+# One-off checks started by hand (MANUAL_KEYWORDS); kept apart from the weekly history.
+MANUAL_FILE = ROOT / "data" / "manual.csv"
+MANUAL_FIELDS = ["checked_at", "keyword", "position", "url", "title"]
+MANUAL_LIMIT = 20
+
 
 def load_config():
     cfg = json.loads(CONFIG_FILE.read_text())
@@ -145,11 +150,65 @@ def write_summary(rows, cfg):
         f.write("\n".join(lines) + "\n")
 
 
+def parse_manual(text):
+    """Split comma- or newline-separated keywords, dropping blanks and repeats."""
+    seen, out = set(), []
+    for kw in text.replace("\n", ",").split(","):
+        kw = " ".join(kw.split())
+        if kw and kw.lower() not in seen:
+            seen.add(kw.lower())
+            out.append(kw)
+    return out[:MANUAL_LIMIT]
+
+
+def run_manual(api_key, cfg, keywords):
+    """One-off check: append to data/manual.csv, leave the weekly history alone."""
+    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows = []
+    for kw in keywords:
+        try:
+            position, url, title = check_keyword(api_key, kw, cfg)
+        except Exception as e:
+            print(f"ERROR  {kw}: {e}", file=sys.stderr)
+            continue
+        pos = "" if position is None else str(position)
+        rows.append({"checked_at": checked_at, "keyword": kw, "position": pos, "url": url, "title": title})
+        print(f"{pos or '-':>4}  {kw}  {url}")
+    if not rows:
+        sys.exit("No results collected.")
+
+    MANUAL_FILE.parent.mkdir(parents=True, exist_ok=True)
+    new_file = not MANUAL_FILE.exists()
+    with MANUAL_FILE.open("a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=MANUAL_FIELDS)
+        if new_file:
+            w.writeheader()
+        w.writerows(rows)
+
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        lines = [f"## Manual check for {cfg['domain']} ({cfg['country']}, top {cfg['max_results']})", "",
+                 "| Keyword | Position | Ranking URL |", "|---|---|---|"]
+        lines += [f"| {r['keyword']} | {r['position'] or 'not in top ' + str(cfg['max_results'])} | {r['url']} |"
+                  for r in rows]
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+    print(f"\nSaved {len(rows)} keywords to {MANUAL_FILE.relative_to(ROOT)}")
+
+
 def main():
     api_key = os.environ.get("SERPER_API_KEY")
     if not api_key:
         sys.exit("Set the SERPER_API_KEY environment variable.")
     cfg = load_config()
+
+    manual = os.environ.get("MANUAL_KEYWORDS", "").strip()
+    if manual:
+        keywords = parse_manual(manual)
+        if not keywords:
+            sys.exit("MANUAL_KEYWORDS had no keywords in it.")
+        return run_manual(api_key, cfg, keywords)
+
     keywords = load_keywords()
     prev = previous_positions()
     today = datetime.now(timezone.utc).date().isoformat()

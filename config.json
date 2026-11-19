@@ -2,5 +2,6 @@
   "domain": "zerodha.com",
   "country": "in",
   "language": "en",
-  "max_results": 30
+  "max_results": 30,
+  "repo": "Girisandeep008/keyword-rank-tracker"
 }

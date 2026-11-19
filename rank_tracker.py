@@ -100,16 +100,29 @@ def find_rank(organic_pages, domain, max_results):
 
 
 def check_keyword(api_key, keyword, cfg):
+    def fetch(page):
+        return serper_search(api_key, keyword, cfg["country"], cfg["language"], page).get("organic", [])
+
     def pages():
         for page in range(1, -(-cfg["max_results"] // PAGE_SIZE) + 1):
-            organic = serper_search(api_key, keyword, cfg["country"],
-                                    cfg["language"], page).get("organic", [])
+            organic = fetch(page)
+            if not organic and page == 1:
+                # An empty first page is a glitch, not "not ranking": retry, then fail loudly.
+                time.sleep(2)
+                organic = fetch(page)
+                if not organic:
+                    raise RuntimeError("Google returned no results (tried twice)")
             if not organic:
                 return
             yield organic
+
     # find_rank stops pulling pages as soon as the domain is found,
     # so each keyword only costs as many credits as it needs.
-    return find_rank(pages(), cfg["domain"], cfg["max_results"])
+    result = find_rank(pages(), cfg["domain"], cfg["max_results"])
+    if result[0] is None:
+        # Confirm a miss with a second pass before reporting "not in top N".
+        result = find_rank(pages(), cfg["domain"], cfg["max_results"])
+    return result
 
 
 def previous_positions():
@@ -134,6 +147,15 @@ def change_label(prev, cur):
         return "dropped out"
     diff = int(prev) - int(cur)
     return f"+{diff}" if diff > 0 else str(diff) if diff < 0 else "0"
+
+
+def note_error(keyword, err):
+    """Log a failed keyword and list it on the GitHub Actions run page."""
+    print(f"ERROR  {keyword}: {err}", file=sys.stderr)
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"- :warning: **{keyword}** was not checked: {err}\n")
 
 
 def write_summary(rows, cfg):
@@ -169,7 +191,7 @@ def run_manual(api_key, cfg, keywords):
         try:
             position, url, title = check_keyword(api_key, kw, cfg)
         except Exception as e:
-            print(f"ERROR  {kw}: {e}", file=sys.stderr)
+            note_error(kw, e)
             continue
         pos = "" if position is None else str(position)
         rows.append({"checked_at": checked_at, "keyword": kw, "position": pos, "url": url, "title": title})
@@ -218,7 +240,7 @@ def main():
         try:
             position, url, title = check_keyword(api_key, kw, cfg)
         except Exception as e:  # keep going; one bad keyword shouldn't kill the run
-            print(f"ERROR  {kw}: {e}", file=sys.stderr)
+            note_error(kw, e)
             continue
         pos = "" if position is None else str(position)
         rows.append({"date": today, "keyword": kw, "position": pos, "url": url, "title": title,

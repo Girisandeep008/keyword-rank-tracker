@@ -28,4 +28,5 @@ keyword in `keywords.txt` and records where your domain ranks and which URL rank
 
 ## Cost
 Serper charges 1 credit per results page (10 results). The script stops paging as soon as it
-finds your domain, so a keyword costs 1–3 credits with `max_results: 30`.
+finds your domain, so a keyword costs 1–3 credits with `max_results: 30`. A keyword that is not
+found is checked a second time to rule out a glitch (up to 6 credits).
